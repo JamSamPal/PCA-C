@@ -27,4 +27,6 @@ which is an eigenvalue problem. The eigenvalues represent the variance and so th
 
 ## To run
 ./pca_calc (executable included)
+
+
 pytest (run tests)
