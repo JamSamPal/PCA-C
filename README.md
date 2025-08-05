@@ -9,7 +9,7 @@ best retain the variance in the data?
 These questions are answered by PCA.
 
 We take the say M points to from an M by N dimensional matrix, X.
-Projecting this matrix onto an arbitrary vector, v, is done by taken X.v
+Projecting this matrix onto an arbitrary vector, v, is done by taking X.v
 The variance of this projection can be found by taking ((X.v).T).(X.v) which results in (v.T).C.v
 where C = (X.T).(X) is the covariance matrix.
 
