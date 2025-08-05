@@ -5,28 +5,24 @@
 #include <vector>
 class PCA {
 public:
-    PCA(const int &num_features, const int &num_data_points, std::vector<std::vector<double>> &input_data) : num_features(num_features), num_data_points(num_data_points), matrix(num_data_points, std::vector<double>(num_features, 0.0)), matrix_T(num_features, std::vector<double>(num_data_points, 0.0)), centred_data(num_data_points, std::vector<double>(num_features, 0.0)), centred_data_T(num_features, std::vector<double>(num_data_points, 0.0)), covariance_matrix(num_features, num_features) {
-        matrix = input_data;
-        matrix_T = _Transpose_matrix(matrix);
-        _Centre_Data();
-        _Generate_Covariance_Matrix();
+    PCA(const int &num_features, const int &num_data_points, const std::vector<std::vector<double>> &input_data) : num_features_(num_features), num_data_points_(num_data_points), matrix_(input_data), centred_data_(num_data_points, std::vector<double>(num_features, 0.0)), covariance_matrix_(num_features, num_features) {
+        CentreData();
+        GenerateCovarianceMatrix();
     };
-    void Compute_Eigenvalues_Eigenvectors();
-    void Save_to_file(const std::string &filename_prefix);
+    void ComputeEigenvaluesEigenvectors();
+    void SaveToFile(const std::string &filename_prefix);
 
 private:
-    int num_features;
-    int num_data_points;
-    std::vector<std::vector<double>> matrix;
-    std::vector<std::vector<double>> matrix_T;
-    const std::vector<std::vector<double>> _Transpose_matrix(const std::vector<std::vector<double>> &matrix);
-    void _Centre_Data();
-    std::vector<std::vector<double>> centred_data;
-    std::vector<std::vector<double>> centred_data_T;
-    void _Generate_Covariance_Matrix();
-    Eigen::MatrixXd covariance_matrix;
-    Eigen::VectorXd eigen_values;
-    Eigen::MatrixXd eigen_vectors;
+    int num_features_;
+    int num_data_points_;
+    std::vector<std::vector<double>> matrix_;
+    const std::vector<std::vector<double>> TransposeMatrix(const std::vector<std::vector<double>> &matrix);
+    void CentreData();
+    std::vector<std::vector<double>> centred_data_;
+    void GenerateCovarianceMatrix();
+    Eigen::MatrixXd covariance_matrix_;
+    Eigen::VectorXd eigen_values_;
+    Eigen::MatrixXd eigen_vectors_;
 };
 
 #endif /* C52DD91C_DDBE_4C77_9498_12FE881D8350 */
