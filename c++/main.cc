@@ -10,8 +10,8 @@ int main() {
         {3, 2}};
     PCA pca(2, 6, X);
 
-    pca.Compute_Eigenvalues_Eigenvectors();
+    pca.ComputeEigenvaluesEigenvectors();
     std::string prefix = "test";
-    pca.Save_to_file(prefix);
+    pca.SaveToFile(prefix);
     return 0;
 }
