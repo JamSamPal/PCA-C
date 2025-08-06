@@ -10,8 +10,8 @@ subprocess.run(f"{str(executable)}", shell=True)
 # Read eigenvalues
 eigenvalues_test = np.loadtxt("test_eigenvalues.txt")
 eigenvalues_test.sort()
-# Read eigenvectors
-eigenvectors_test = np.loadtxt("test_eigenvectors.txt")
+# # Read eigenvectors
+# eigenvectors_test = np.loadtxt("test_eigenvectors.txt")
 
 
 def test_simple():
@@ -21,4 +21,7 @@ def test_simple():
     pca = PCA(n_components=2)
     pca.fit(X)
     eigenvalues = pca.explained_variance_
-    assert eigenvalues.all() == eigenvalues_test.all()
+
+    # test that implementation gets within a good degree of tolerance
+    for i in range(len(X[0])):
+        assert abs(eigenvalues_test[1] - eigenvalues[0]) < 0.00001
