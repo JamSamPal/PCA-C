@@ -10,7 +10,7 @@ int main() {
         {3, 2}};
     PCA pca(2, 6, X);
 
-    pca.ComputeEigenvaluesEigenvectors();
+    pca.QREigenvalues();
     std::string prefix = "test";
     pca.SaveToFile(prefix);
     return 0;
