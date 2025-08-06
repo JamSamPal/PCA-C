@@ -4,31 +4,20 @@
 #include <fstream>
 #include <iostream>
 #include <numeric>
-const std::vector<std::vector<double>> PCA::TransposeMatrix(const std::vector<std::vector<double>> &matrix) {
-    std::vector<std::vector<double>> transposed_matrix(matrix[0].size(), std::vector<double>(matrix.size(), 0.0));
-    for (int i = 0; i < matrix.size(); ++i) {
-        for (int j = 0; j < matrix[0].size(); ++j) {
-            transposed_matrix[j][i] = matrix[i][j];
-        }
-    }
-    return transposed_matrix;
-}
 
 void PCA::CentreData() {
     // We loop through the transposed matrix where each row is a feature
     // Calculating the mean and sd of this feature we can then centre and
     // normalise the data of the original
-    std::vector<std::vector<double>> matrix_T = TransposeMatrix(matrix_);
     for (int row = 0; row < num_features_; row++) {
 
-        double sum = std::accumulate(std::begin(matrix_T[row]), std::end(matrix_T[row]), 0.0);
-        double m = sum / matrix_T[row].size();
-
-        double var = 0;
-        for (int col = 0; col < num_data_points_; col++) {
-            var += (matrix_T[row][col] - m) * (matrix_T[row][col] - m);
+        double sum = 0.0, sum_sq = 0.0;
+        for (double x : matrix_T_[row]) {
+            sum += x;
+            sum_sq += x * x;
         }
-        var /= num_data_points_;
+        double m = sum / num_data_points_;
+        double var = sum_sq / num_data_points_ - m * m;
         double sd = std::sqrt(var);
 
         // In the original, untransposed matrix "row" now indexes the columns
@@ -38,24 +27,21 @@ void PCA::CentreData() {
     }
 }
 
-std::vector<std::vector<double>> PCA::GenerateCovarianceMatrix() {
-    // Initialise the transposed matrix
-    std::vector<std::vector<double>> centred_data_T = TransposeMatrix(centred_data_);
-    std::vector<std::vector<double>> covariance_matrix(num_features_, std::vector<double>(num_features_, 0.0));
-    // Calculate covariance matrix
+void PCA::GenerateCovarianceMatrix() {
+    // Calculate covariance matrix (symmetric so we can half the work needed)
     for (int row = 0; row < num_features_; row++) {
-        for (int col = 0; col < num_features_; col++) {
-            covariance_matrix[row][col] = 0.0;
+        for (int col = row; col < num_features_; col++) {
+            double value = 0.0;
             for (int element = 0; element < num_data_points_; element++) {
-                covariance_matrix[row][col] += ((centred_data_T[row][element] * centred_data_[element][col]) / (num_data_points_ - 1));
+                value += ((centred_data_T_[row][element] * centred_data_[element][col]) / (num_data_points_ - 1));
             }
+            covariance_matrix_[row][col] = value;
+            covariance_matrix_[col][row] = value;
         }
     }
-
-    return covariance_matrix;
 }
 
-void PCA::QRDecomposition(std::vector<std::vector<double>> A) {
+void PCA::QRDecomposition(const std::vector<std::vector<double>> &A) {
     // Performs a Q, R decomposition of the covariance matrix
     // Q is an orthogonal matrix and R is an upper-triangular one.
     // Multiplication by an orthogonal matrix leaves the eigenvalues
@@ -71,37 +57,36 @@ void PCA::QRDecomposition(std::vector<std::vector<double>> A) {
     u = A;
 
     // first step of gram-schmidt: u_0 = C[:,0] and thus Q[:,0] = u_0/norm(u_0)
-    std::vector<double> norm_u_0 = NormaliseVector(u[0]);
-    Q_T_matrix_[0] = norm_u_0;
+    NormaliseVector(u[0]);
+    Q_T_matrix_[0] = u[0];
+    std::vector<double> projected_vector_buffer(num_features_);
 
     for (int i = 1; i < num_features_; i++) {
         for (int j = 0; j < i; j++) {
-            std::vector<double> projected_vector = ProjectVector(u[i], Q_T_matrix_[j]);
+            ProjectVector(u[i], Q_T_matrix_[j], projected_vector_buffer);
             // Gram-Schmidt updates each vector and then normalises it.
             for (int k = 0; k < u[0].size(); k++) {
-                u[i][k] -= projected_vector[k];
+                u[i][k] -= projected_vector_buffer[k];
             }
         }
-        std::vector<double> norm_u = NormaliseVector(u[i]);
-        Q_T_matrix_[i] = norm_u;
+        NormaliseVector(u[i]);
+        Q_T_matrix_[i] = u[i];
     }
-    R_matrix_ = MultiplyMatrices(Q_T_matrix_, A);
+    MultiplyMatrices(Q_T_matrix_, A, R_matrix_);
 }
 
 void PCA::QREigenvalues() {
     // Now we iterate the QR decomposition to converge on the eigenvalues
     // encoded in the diagonal of R
-    covariance_matrix_ = GenerateCovarianceMatrix();
-    std::vector<std::vector<double>> A = TransposeMatrix(covariance_matrix_);
-
     int i = 0;
-    while (i<max_iterations_ & A[0][1]> tolerance_) {
-        QRDecomposition(A);
-        A = MultiplyMatrices(R_matrix_, TransposeMatrix(Q_T_matrix_));
+    while (i<max_iterations_ & covariance_matrix_T_[0][1]> tolerance_) {
+        QRDecomposition(covariance_matrix_T_);
+        TransposeMatrix(Q_T_matrix_, Q_matrix_);
+        MultiplyMatrices(R_matrix_, Q_matrix_, covariance_matrix_T_);
         i++;
     }
     for (int i = 0; i < eigen_values_.size(); ++i) {
-        eigen_values_[i] = A[i][i];
+        eigen_values_[i] = covariance_matrix_T_[i][i];
     }
 
     // Get eigenvalues in descending order
@@ -111,18 +96,19 @@ void PCA::QREigenvalues() {
 void PCA::QREigenvectors() {
     // Find the eigenvectors from the approximate eigenvalues
     std::vector<double> random_vector(num_features_);
+    std::vector<std::vector<double>> A_minus_lambda(num_features_, std::vector<double>(num_features_, 0.0));
+    std::vector<std::vector<double>> inverse(num_features_, std::vector<double>(num_features_, 0.0));
     random_vector[0] = 1.0;
     for (int i = 0; i < num_features_; i++) {
         // Find the inverse of (A- eigenvalue* Identity) for each eigenvalue
-        std::vector<std::vector<double>> A_minus_lambda = SubtractDiagonalMatrix(covariance_matrix_, eigen_values_[i]);
-        std::vector<std::vector<double>> inverse = GaussJordanElimination(A_minus_lambda);
-        // std::cout << inverse[0][0] << inverse[0][1] << inverse[1][0] << inverse[1][1] << std::endl;
-        // Perform the iteration method on a randomly chosen vector, here just a row in Q_T
+        SubtractDiagonalMatrix(covariance_matrix_, eigen_values_[i], A_minus_lambda);
+        GaussJordanElimination(A_minus_lambda, inverse);
+        // Perform the iteration method on a randomly chosen vector
         eigen_vectors_[i] = IterationMethod(inverse, random_vector);
     }
 }
 
-std::vector<double> PCA::IterationMethod(std::vector<std::vector<double>> matrix, std::vector<double> vector) {
+std::vector<double> PCA::IterationMethod(const std::vector<std::vector<double>> &matrix, const std::vector<double> &vector) {
     // Iteration method: take (A- eigenvalue* Identity)^-1
     // and multiply by a random vector, b. Repeated applications
     // will eventually yield a b that approximates the eigenvector
@@ -130,30 +116,37 @@ std::vector<double> PCA::IterationMethod(std::vector<std::vector<double>> matrix
     int vec_size = vector.size();
     std::vector<double> old_b(vec_size);
     std::vector<double> new_b(vec_size);
-    old_b = NormaliseVector(vector);
+    old_b = vector;
+    NormaliseVector(old_b);
 
     while (i < 10000) {
-        new_b = MultiplyVector(matrix, old_b);
-        old_b = NormaliseVector(new_b);
+        MultiplyVector(matrix, old_b, new_b);
+        NormaliseVector(new_b);
+        old_b.swap(new_b);
         i++;
     }
 
     return old_b;
 }
 
-std::vector<double> PCA::MultiplyVector(const std::vector<std::vector<double>> &matrix, const std::vector<double> &vector) {
-    std::vector<double> output_vector(vector.size());
+void PCA::TransposeMatrix(const std::vector<std::vector<double>> &matrix, std::vector<std::vector<double>> &transposed) {
+    for (int i = 0; i < matrix.size(); ++i) {
+        for (int j = 0; j < matrix[0].size(); ++j) {
+            transposed[j][i] = matrix[i][j];
+        }
+    }
+}
+
+void PCA::MultiplyVector(const std::vector<std::vector<double>> &matrix, const std::vector<double> &vector, std::vector<double> &output_vector) {
     for (int row = 0; row < matrix.size(); row++) {
         output_vector[row] = 0.0;
         for (int col = 0; col < vector.size(); col++) {
             output_vector[row] += (matrix[row][col] * vector[col]);
         }
     }
-
-    return output_vector;
 }
 
-std::vector<std::vector<double>> PCA::GaussJordanElimination(std::vector<std::vector<double>> matrix) {
+void PCA::GaussJordanElimination(std::vector<std::vector<double>> &matrix, std::vector<std::vector<double>> &inverse) {
     // Gauss-Jordan: going column to column we identify the pivot (the value on the diagonal)
     // and ensure it is non-zero. We then use row addition/subtraction to set all values below
     // the pivot in the same column to zero (forward elimination). We then divide each row by
@@ -162,8 +155,12 @@ std::vector<std::vector<double>> PCA::GaussJordanElimination(std::vector<std::ve
     // Performing all these methods but on the identity matrix  instead of our input turns
     // the identity matrix into the inverse we desire
     // Initialise inverse matrix which begins as the identity
-    std::vector<std::vector<double>> inverse(matrix.size(), std::vector<double>(matrix[0].size(), 0.0));
-    inverse = SubtractDiagonalMatrix(inverse, -1.0);
+    // Initialize inverse to Identity
+    for (int i = 0; i < matrix.size(); i++) {
+        for (int j = 0; j < matrix.size(); j++) {
+            inverse[i][j] = (i == j ? 1.0 : 0.0);
+        }
+    }
 
     for (int col = 0; col < matrix[0].size(); col++) {
         // Swapping rows if our pivot point is 0
@@ -216,15 +213,16 @@ std::vector<std::vector<double>> PCA::GaussJordanElimination(std::vector<std::ve
             }
         }
     }
-
-    return inverse;
 }
 
-std::vector<std::vector<double>> PCA::SubtractDiagonalMatrix(std::vector<std::vector<double>> matrix, const double &diag_value) {
+void PCA::SubtractDiagonalMatrix(const std::vector<std::vector<double>> &matrix, const double &diag_value, std::vector<std::vector<double>> &output) {
     for (int i = 0; i < matrix.size(); i++) {
-        matrix[i][i] -= diag_value;
+        output[i][i] = covariance_matrix_[i][i] - diag_value;
+        for (int j = 0; j < matrix.size(); j++) {
+            if (i != j)
+                output[i][j] = covariance_matrix_[i][j];
+        }
     }
-    return matrix;
 }
 
 double PCA::CalculateNorm(const std::vector<double> &u, const std::vector<double> &v) {
@@ -236,37 +234,30 @@ double PCA::CalculateNorm(const std::vector<double> &u, const std::vector<double
     return norm;
 }
 
-std::vector<double> PCA::NormaliseVector(std::vector<double> u) {
+void PCA::NormaliseVector(std::vector<double> &u) {
     double norm = std::sqrt(CalculateNorm(u, u));
     for (int val = 0; val < u.size(); val++) {
         u[val] /= norm;
     }
-
-    return u;
 }
 
-std::vector<double> PCA::ProjectVector(const std::vector<double> &u, const std::vector<double> &e) {
+void PCA::ProjectVector(const std::vector<double> &u, const std::vector<double> &e, std::vector<double> &projected_vector) {
     double norm_1 = CalculateNorm(u, e);
     double norm_2 = CalculateNorm(e, e);
-    std::vector<double> proj_vector(e.size());
     for (int val = 0; val < e.size(); val++) {
-        proj_vector[val] = e[val] * (norm_1 / norm_2);
+        projected_vector[val] = e[val] * (norm_1 / norm_2);
     }
-    return proj_vector;
 }
 
-std::vector<std::vector<double>> PCA::MultiplyMatrices(const std::vector<std::vector<double>> &a, const std::vector<std::vector<double>> &b) {
-    std::vector<std::vector<double>> output_matrix(a.size(), std::vector<double>(b[0].size(), 0.0));
+void PCA::MultiplyMatrices(const std::vector<std::vector<double>> &a, const std::vector<std::vector<double>> &b, std::vector<std::vector<double>> &c) {
     for (int row = 0; row < a.size(); row++) {
         for (int col = 0; col < b[0].size(); col++) {
-            output_matrix[row][col] = 0.0;
+            c[row][col] = 0.0;
             for (int element = 0; element < a[0].size(); element++) {
-                output_matrix[row][col] += (a[row][element] * b[element][col]);
+                c[row][col] += (a[row][element] * b[element][col]);
             }
         }
     }
-
-    return output_matrix;
 }
 
 void PCA::SaveToFile(const std::string &filename_prefix) {
