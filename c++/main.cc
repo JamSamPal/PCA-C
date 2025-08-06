@@ -11,6 +11,7 @@ int main() {
     PCA pca(2, 6, X);
 
     pca.QREigenvalues();
+    pca.QREigenvectors();
     std::string prefix = "test";
     pca.SaveToFile(prefix);
     return 0;
