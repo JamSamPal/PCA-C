@@ -1,5 +1,8 @@
 # PCA-C
-Principal Component Analysis done in C++
+Principal Component Analysis done in C++. An exercise in learning about high performance computing.
+
+- Close attention is payed to avoiding dynamic allocations, ensuring optimal memory usage.
+- However, libraries like "Eigen" are avoided to put emphasis on understanding the mathematics.
 
 ## Background
 Given points in an N-dimensional vector space, what directions in this space capture the variance of the points the best?
